@@ -2,3 +2,4 @@ numpy
 pandas
 requests
 sentence-transformers
+streamlit-aggrid
