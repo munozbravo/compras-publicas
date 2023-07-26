@@ -12,7 +12,7 @@ import streamlit as st
 
 # Definir variables y constantes
 
-TOKEN = st.secrets["X_APP_TOKEN"]
+TOKEN = os.getenv("X_APP_TOKEN")
 URL = "https://www.datos.gov.co/resource/p6dx-8zbt.json"
 
 MODELO = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
