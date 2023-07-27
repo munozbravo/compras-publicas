@@ -68,7 +68,6 @@ def buscar_procesos(_session, payload):
                 break
     else:
         procesos = []
-        print(r.status_code)
 
     return procesos
 
