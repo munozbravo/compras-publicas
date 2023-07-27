@@ -1,19 +1,19 @@
 from datetime import date, timedelta
-import json
 import os
 
 from st_aggrid import GridOptionsBuilder, AgGrid, GridUpdateMode, ColumnsAutoSizeMode
 from sentence_transformers import SentenceTransformer, util
-import numpy as np
 import pandas as pd
+import plotly.express as px
 import requests
 import streamlit as st
 
 
 # Definir variables y constantes
 
-TOKEN = os.getenv("X_APP_TOKEN")
+TOKEN = st.secrets["X_APP_TOKEN"]
 URL = "https://www.datos.gov.co/resource/p6dx-8zbt.json"
+ENTIDADES = "https://www.datos.gov.co/resource/h7zv-k39x.json"
 
 MODELO = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
 
@@ -68,8 +68,27 @@ def buscar_procesos(_session, payload):
                 break
     else:
         procesos = []
+        print(r.status_code)
 
     return procesos
+
+
+@st.cache_data(show_spinner="Cargando entidades del Estado...")
+def crear_df_entidades():
+    cols = ["CCB_NIT_INST", "ORDEN", "SECTOR"]
+
+    df_entidades = pd.read_csv(
+        "data/entidades.csv",
+        encoding="utf-8",
+        dtype={"CCB_NIT_INST": str},
+        usecols=cols,
+    )
+
+    df_entidades.dropna(subset=["CCB_NIT_INST"], inplace=True)
+    df_entidades.drop_duplicates(subset=["CCB_NIT_INST"], inplace=True)
+    df_entidades.reset_index(drop=True, inplace=True)
+
+    return df_entidades
 
 
 @st.cache_data(show_spinner="Creando tabla de procesos...")
@@ -82,10 +101,10 @@ def crear_df_procesos(procesos):
     return df_procesos
 
 
-def preparar_consulta_socrata(
+def payload_procesos(
     fechas,
     precio_minimo=0,
-    orden="Nacional",
+    orden=None,
     entidades=None,
     fases=None,
     modalidades=None,
@@ -116,10 +135,29 @@ def preparar_consulta_socrata(
 
     payload = {
         "$where": where_query,
-        "ordenentidad": orden,
         "$order": "fecha_de_publicacion_del DESC",
         "$limit": OFFSET,
     }
+
+    if orden is not None:
+        payload.update({"ordenentidad": orden})
+
+    return payload
+
+
+def payload_entidades(nits=None):
+    # https://dev.socrata.com/foundry/www.datos.gov.co/h7zv-k39x
+
+    payload = {"$limit": OFFSET}
+    where_query = ""
+
+    if nits is not None:
+        if isinstance(nits, list):
+            nits = set(nits)
+        where_query = f"ccb_nit_inst in{tuple(e for e in nits)}"
+
+    if where_query:
+        payload.update({"$where": where_query})
 
     return payload
 
@@ -144,7 +182,6 @@ with st.sidebar:
     boton = st.button("Buscar procesos")
 
 query = st.text_input("Consulta a realizar")
-# btn_query = st.button("Calcular similitud")
 
 
 if "procesos" not in st.session_state:
@@ -155,10 +192,12 @@ if "procesos" not in st.session_state:
 
 embedder = load_embedder(MODELO)
 
+df_entidades = crear_df_entidades()
+
 session = create_session(TOKEN)
 
 if boton:
-    payload = preparar_consulta_socrata(fechas, 50000000)
+    payload = payload_procesos(fechas, 50000000)  # orden "Nacional"
 
     procesos = buscar_procesos(_session=session, payload=payload)
     st.session_state.procesos = procesos
@@ -181,6 +220,10 @@ if query:
         df_similarity = df_procesos.loc[ids]
         df_similarity["score"] = [hit["score"] for hit in query_hits]
 
+        df_similarity = df_similarity.merge(
+            df_entidades, how="left", left_on="nit_entidad", right_on="CCB_NIT_INST"
+        )
+
         COLS = [
             "id_del_proceso",
             "entidad",
@@ -191,44 +234,80 @@ if query:
             "unidad_de_duracion",
             "modalidad_de_contratacion",
             "score",
+            "ORDEN",
+            "SECTOR",
         ]
 
         df_similarity = df_similarity[COLS]
         df_similarity.reset_index(drop=True, inplace=True)
 
         gb = GridOptionsBuilder.from_dataframe(df_similarity)
-        gb.configure_selection(selection_mode="single", use_checkbox=True)
+        gb.configure_selection(selection_mode="multiple", use_checkbox=True)
         gridOptions = gb.build()
-        prueba = AgGrid(
+
+        grid = AgGrid(
             df_similarity,
             gridOptions,
             columns_auto_size_mode=ColumnsAutoSizeMode.FIT_CONTENTS,
             update_mode=GridUpdateMode.SELECTION_CHANGED,
         )
 
-        selected_rows = prueba["selected_rows"]
+        selected_rows = grid["selected_rows"]
 
-        if len(selected_rows) == 1:
-            fila = selected_rows[0]
+        if len(selected_rows) >= 1:
+            if len(selected_rows) > 2:
+                cols = ["ORDEN", "SECTOR", "precio_base"]
+                seleccion = pd.DataFrame(selected_rows)[cols]
+
+                seleccion["precio_base"] = pd.to_numeric(seleccion["precio_base"])
+
+                seleccion = seleccion.applymap(lambda x: x if x else "No Identificado")
+
+                seleccion.dropna(thresh=2, inplace=True)
+
+                fig = px.treemap(
+                    seleccion,
+                    path=[
+                        px.Constant("Todos"),
+                        "ORDEN",
+                        "SECTOR",
+                    ],
+                    values="precio_base",
+                    color="SECTOR",
+                )
+
+                fig.update_traces(
+                    root_color="lightgrey",
+                    hovertemplate="<b>%{label}</b><br><b>Monto</b> %{value}",
+                    textinfo="label+value",
+                )
+
+                st.plotly_chart(fig, use_container_width=True)
 
             st.divider()
 
-            st.markdown(
-                f"""
-                    ## Descripción
-                    {fila.get('descripci_n_del_procedimiento')}
+            for fila in selected_rows:
+                score = fila.get("score")
+                color_score = "green" if score > 0.6 else "red"
 
-                    Entidad: {fila.get('entidad')}
+                st.markdown(
+                    f"""
+                        ## Descripción
+                        {fila.get('descripci_n_del_procedimiento')}
 
-                    Duración: {fila.get('duracion')} {fila.get('unidad_de_duracion')}
+                        Entidad: :blue[{fila.get('entidad')}]
 
-                    Valor: {float(fila.get('precio_base')):,.2f}
+                        Duración: {fila.get('duracion')} {fila.get('unidad_de_duracion')}
 
-                    Publicado: {fila.get('fecha_de_publicacion_del')}
+                        Valor: :blue[{float(fila.get('precio_base')):,.2f}]
 
-                    Modalidad: {fila.get('modalidad_de_contratacion')}
+                        Publicado: {fila.get('fecha_de_publicacion_del')}
 
-                    Score
-                    :red[{fila.get('score'):.2f}]
-                """
-            )
+                        Sector: :blue[{fila.get('SECTOR')}]
+                        
+                        Modalidad: {fila.get('modalidad_de_contratacion')}
+
+                        Score
+                        :{color_score}[{fila.get('score'):.2f}]
+                    """
+                )
