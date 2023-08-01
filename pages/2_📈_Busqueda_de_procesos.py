@@ -164,7 +164,7 @@ st.set_page_config(
     page_title="Procesos de contratación pública", page_icon="📈", layout="wide"
 )
 
-st.title(":flag-co: Búsqueda en procesos de contratación pública")
+st.title(":flag-co: Búsqueda en procesos de contratación")
 
 st.markdown(
     """Aplicación para encontrar similitud semántica en descripción de procesos de contratación."""
