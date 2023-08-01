@@ -1,4 +1,4 @@
-from datetime import date, timedelta
+from pathlib import Path
 
 from st_aggrid import GridOptionsBuilder, AgGrid, GridUpdateMode, ColumnsAutoSizeMode
 from sentence_transformers import SentenceTransformer, util
@@ -12,33 +12,15 @@ import streamlit as st
 
 TOKEN = st.secrets["X_APP_TOKEN"]
 
-URL = "https://www.datos.gov.co/resource/p6dx-8zbt.json"
 URL_ENTIDADES = "https://www.datos.gov.co/resource/h7zv-k39x.json"
 URL_PAA = "https://www.datos.gov.co/resource/b6m4-qgqv.json"
 
 COLS_ENTIDADES = ["NOMBRE", "CCB_NIT_INST", "ORDEN", "SECTOR"]
 
-MODELO = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
-
 OFFSET = 1000
-
-HOY = date.today()
-ayer = HOY - timedelta(days=7)
 
 
 # Definir funciones
-
-
-@st.cache_resource(show_spinner="Cargando modelo para similitud semántica...")
-def load_embedder(model_id):
-    return SentenceTransformer(model_id)
-
-
-@st.cache_data(show_spinner="Calculando vectores...")
-def encode_texts(_embedder, texts):
-    embeddings = _embedder.encode(texts, convert_to_tensor=True)
-
-    return embeddings
 
 
 @st.cache_resource
@@ -87,60 +69,6 @@ def crear_df_entidades():
     return df_entidades
 
 
-@st.cache_data(show_spinner="Creando tabla de procesos...")
-def crear_df_procesos(procesos):
-    df_procesos = pd.DataFrame.from_records(procesos)
-    df_procesos = df_procesos.dropna(subset=["descripci_n_del_procedimiento"])
-    df_procesos = df_procesos.drop_duplicates(subset=["id_del_proceso", "entidad"])
-    df_procesos = df_procesos.reset_index(drop=True)
-
-    return df_procesos
-
-
-def payload_procesos(
-    fechas,
-    precio_minimo=0,
-    orden=None,
-    entidades=None,
-    fases=None,
-    modalidades=None,
-):
-    # https://dev.socrata.com/foundry/www.datos.gov.co/p6dx-8zbt
-    if isinstance(fechas, tuple):
-        inicio, fin = fechas
-    else:
-        inicio = fechas
-        fin = HOY
-
-    inicial = f'{inicio.strftime("%Y-%m-%d")}T00:00:00'
-    final = f'{fin.strftime("%Y-%m-%d")}T23:59:59'
-
-    where_query = f"fecha_de_publicacion_del between '{inicial}' and '{final}'"
-
-    if precio_minimo > 0:
-        where_query = f"{where_query} AND precio_base > {precio_minimo}"
-
-    if entidades is not None:
-        where_query = f"{where_query} AND entidad in{tuple(e for e in entidades)}"
-
-    if fases is not None:
-        where_query = f"{where_query} AND fase in{tuple(f for f in fases)}"
-
-    if modalidades is not None:
-        where_query = f"{where_query} AND modalidad_de_contratacion in{tuple(m for m in modalidades)}"
-
-    payload = {
-        "$where": where_query,
-        "$order": "fecha_de_publicacion_del DESC",
-        "$limit": OFFSET,
-    }
-
-    if orden is not None:
-        payload.update({"ordenentidad": orden})
-
-    return payload
-
-
 def payload_entidades(nits=None):
     # https://dev.socrata.com/foundry/www.datos.gov.co/h7zv-k39x
 
@@ -186,18 +114,51 @@ def normalizar_textual(df, col):
 
 # Preparar ui
 
-st.set_page_config(page_title="Observatorio de Mercado", page_icon="👋", layout="wide")
-
-st.title(":flag-co: Observatorio de mercado de contratación pública")
-
-st.sidebar.success("Seleccione alguna de las pestañas disponibles.")
-
-st.markdown(
-    """Aplicaciones para el estudio de la contratación pública. **👈 Seleccione alguna pestaña de la izquierda** para diferentes análisis.
-    """
+st.set_page_config(
+    page_title="Presupuesto de entidades estatales", page_icon="🌍", layout="wide"
 )
+
+st.title(":flag-co: Presupuesto de entidades estatales")
+
+st.markdown("""Aplicación para dimensionar el presupuesto de entidades por sector.""")
 
 st.markdown("---")
 
 
 # Aca se modifica todo
+
+df_entidades = crear_df_entidades()
+
+session = create_session(TOKEN)
+
+prep_ppa = payload_paa(2023)
+paas = buscar_socrata(_session=session, url=URL_PAA, payload=prep_ppa)
+
+df_paa = pd.DataFrame.from_records(paas)
+df_paa["valor_presupuesto_general"] = pd.to_numeric(df_paa["valor_presupuesto_general"])
+
+df_paa["normalizado"] = normalizar_textual(df_paa, "nombre_entidad")
+df_entidades["normalizado"] = normalizar_textual(df_entidades, "NOMBRE")
+
+
+df_paa = df_paa.merge(
+    df_entidades, how="left", left_on="normalizado", right_on="normalizado"
+)
+
+df_paa[COLS_ENTIDADES] = df_paa[COLS_ENTIDADES].fillna("No identificado")
+
+fig = px.treemap(
+    df_paa,
+    path=[px.Constant("Todos"), "ORDEN", "SECTOR", "NOMBRE"],
+    values="valor_presupuesto_general",
+    color="SECTOR",
+)
+
+fig.update_traces(
+    root_color="lightgrey",
+    hovertemplate="<b>%{label}</b><br><b>Monto</b> %{value:,.2f}",
+    texttemplate="<b>%{label}</b><br><b>Monto</b> %{value:,.2f}",
+    textinfo="label+value",
+)
+
+st.plotly_chart(fig, use_container_width=True)
