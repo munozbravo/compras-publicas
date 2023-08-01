@@ -4,8 +4,8 @@ emoji: 🏢
 colorFrom: indigo
 colorTo: red
 sdk: streamlit
-sdk_version: 1.21.0
-app_file: app.py
+sdk_version: 1.24.1
+app_file: Observatorio.py
 pinned: false
 license: mit
 ---
