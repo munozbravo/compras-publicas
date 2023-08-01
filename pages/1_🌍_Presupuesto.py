@@ -148,11 +148,12 @@ if paas:
         df_entidades, how="left", left_on="normalizado", right_on="normalizado"
     )
 
-    df_paa[COLS_ENTIDADES] = df_paa[COLS_ENTIDADES].fillna("No identificado")
+    cols = COLS_ENTIDADES + ["nombre_entidad"]
+    df_paa[cols] = df_paa[cols].fillna("No identificado")
 
     fig = px.treemap(
         df_paa,
-        path=[px.Constant("Todos"), "ORDEN", "SECTOR", "NOMBRE"],
+        path=[px.Constant("Todos"), "ORDEN", "SECTOR", "nombre_entidad"],
         values="valor_presupuesto_general",
         color="SECTOR",
     )
