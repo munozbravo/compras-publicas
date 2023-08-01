@@ -204,6 +204,13 @@ if boton:
     procesos = buscar_socrata(_session=session, url=URL, payload=payload)
     st.session_state.procesos = procesos
 
+    if st.session_state.procesos:
+        inicio, fin = fechas
+        st.info(
+            f'Búsqueda realizada para procesos entre {inicio.strftime("%Y-%m-%d")} y {fin.strftime("%Y-%m-%d")}',
+            icon="ℹ️",
+        )
+
 
 if query:
     query_embedding = encode_texts(embedder, query)
@@ -258,7 +265,7 @@ if query:
 
         if len(selected_rows) >= 1:
             if len(selected_rows) > 2:
-                cols = ["ORDEN", "SECTOR", "precio_base"]
+                cols = ["ORDEN", "SECTOR", "entidad", "precio_base"]
                 seleccion = pd.DataFrame(selected_rows)[cols]
 
                 seleccion["precio_base"] = pd.to_numeric(seleccion["precio_base"])
@@ -269,11 +276,7 @@ if query:
 
                 fig = px.treemap(
                     seleccion,
-                    path=[
-                        px.Constant("Todos"),
-                        "ORDEN",
-                        "SECTOR",
-                    ],
+                    path=[px.Constant("Todos"), "ORDEN", "SECTOR", "entidad"],
                     values="precio_base",
                     color="SECTOR",
                 )
