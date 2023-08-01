@@ -134,31 +134,34 @@ session = create_session(TOKEN)
 prep_ppa = payload_paa(2023)
 paas = buscar_socrata(_session=session, url=URL_PAA, payload=prep_ppa)
 
-df_paa = pd.DataFrame.from_records(paas)
-df_paa["valor_presupuesto_general"] = pd.to_numeric(df_paa["valor_presupuesto_general"])
+if paas:
+    df_paa = pd.DataFrame.from_records(paas)
 
-df_paa["normalizado"] = normalizar_textual(df_paa, "nombre_entidad")
-df_entidades["normalizado"] = normalizar_textual(df_entidades, "NOMBRE")
+    df_paa["valor_presupuesto_general"] = pd.to_numeric(
+        df_paa["valor_presupuesto_general"]
+    )
 
+    df_paa["normalizado"] = normalizar_textual(df_paa, "nombre_entidad")
+    df_entidades["normalizado"] = normalizar_textual(df_entidades, "NOMBRE")
 
-df_paa = df_paa.merge(
-    df_entidades, how="left", left_on="normalizado", right_on="normalizado"
-)
+    df_paa = df_paa.merge(
+        df_entidades, how="left", left_on="normalizado", right_on="normalizado"
+    )
 
-df_paa[COLS_ENTIDADES] = df_paa[COLS_ENTIDADES].fillna("No identificado")
+    df_paa[COLS_ENTIDADES] = df_paa[COLS_ENTIDADES].fillna("No identificado")
 
-fig = px.treemap(
-    df_paa,
-    path=[px.Constant("Todos"), "ORDEN", "SECTOR", "NOMBRE"],
-    values="valor_presupuesto_general",
-    color="SECTOR",
-)
+    fig = px.treemap(
+        df_paa,
+        path=[px.Constant("Todos"), "ORDEN", "SECTOR", "NOMBRE"],
+        values="valor_presupuesto_general",
+        color="SECTOR",
+    )
 
-fig.update_traces(
-    root_color="lightgrey",
-    hovertemplate="<b>%{label}</b><br><b>Monto</b> %{value:,.2f}",
-    texttemplate="<b>%{label}</b><br><b>Monto</b> %{value:,.2f}",
-    textinfo="label+value",
-)
+    fig.update_traces(
+        root_color="lightgrey",
+        hovertemplate="<b>%{label}</b><br><b>Monto</b> %{value:,.2f}",
+        texttemplate="<b>%{label}</b><br><b>Monto</b> %{value:,.2f}",
+        textinfo="label+value",
+    )
 
-st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, use_container_width=True)
