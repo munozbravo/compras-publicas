@@ -1,111 +1,37 @@
 from datetime import date, timedelta
 
 from st_aggrid import GridOptionsBuilder, AgGrid, GridUpdateMode, ColumnsAutoSizeMode
-from sentence_transformers import SentenceTransformer, util
+from sentence_transformers import util
 import pandas as pd
-import plotly.express as px
-import requests
 import streamlit as st
 
+from utils.caches import configurar_pagina
 
-# Definir variables y constantes
+from utils.caches import (
+    load_embedder,
+    encode_texts,
+    create_session,
+    buscar_socrata,
+    crear_df_resultados,
+)
+from utils.variables import URL_PROCESOS, URL_ENTIDADES_FP, COLS_PROCESOS, ORDEN_ENTIDAD
 
-TOKEN = st.secrets["X_APP_TOKEN"]
 
-URL = "https://www.datos.gov.co/resource/p6dx-8zbt.json"
-URL_ENTIDADES = "https://www.datos.gov.co/resource/h7zv-k39x.json"
-URL_PAA = "https://www.datos.gov.co/resource/b6m4-qgqv.json"
-
-COLS_ENTIDADES = ["NOMBRE", "CCB_NIT_INST", "ORDEN", "SECTOR"]
-
-MODELO = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
-
-OFFSET = 1000
-
-HOY = date.today()
-ayer = HOY - timedelta(days=7)
+configurar_pagina(title="Procesos de contratación pública", icon="📈", layout="wide")
 
 
 # Definir funciones
 
 
-@st.cache_resource(show_spinner="Cargando modelo para similitud semántica...")
-def load_embedder(model_id):
-    return SentenceTransformer(model_id)
-
-
-@st.cache_data(show_spinner="Calculando vectores...")
-def encode_texts(_embedder, texts):
-    embeddings = _embedder.encode(texts, convert_to_tensor=True)
-
-    return embeddings
-
-
-@st.cache_resource
-def create_session(token):
-    session = requests.Session()
-    session.headers.update({"X-App-token": token})
-
-    return session
-
-
-@st.cache_data(show_spinner="Buscando en Socrata API...")
-def buscar_socrata(_session, url, payload):
-    n = OFFSET + 0
-
-    r = _session.get(url, params=payload)
-
-    if r.status_code in [200, 202]:
-        procesos = r.json()
-        params = payload.copy()
-
-        while len(procesos) == n:
-            params.update({"$offset": n})
-
-            r = _session.get(url, params=params)
-            if r.status_code in [200, 202]:
-                procesos.extend(r.json())
-                n += OFFSET
-
-            else:
-                break
-    else:
-        procesos = []
-
-    return procesos
-
-
-@st.cache_data(show_spinner="Cargando entidades del Estado...")
-def crear_df_entidades():
-    df_entidades = pd.read_csv(
-        "data/entidades.csv",
-        encoding="utf-8",
-        dtype={"CCB_NIT_INST": str},
-        usecols=COLS_ENTIDADES,
-    )
-
-    return df_entidades
-
-
-@st.cache_data(show_spinner="Creando tabla de procesos...")
-def crear_df_procesos(procesos):
-    df_procesos = pd.DataFrame.from_records(procesos)
-    df_procesos = df_procesos.dropna(subset=["descripci_n_del_procedimiento"])
-    df_procesos = df_procesos.drop_duplicates(subset=["id_del_proceso", "entidad"])
-    df_procesos = df_procesos.reset_index(drop=True)
-
-    return df_procesos
-
-
 def payload_procesos(
     fechas,
     precio_minimo=0,
+    offset=1000,
     orden=None,
     entidades=None,
-    fases=None,
-    modalidades=None,
 ):
     # https://dev.socrata.com/foundry/www.datos.gov.co/p6dx-8zbt
+
     if isinstance(fechas, tuple):
         inicio, fin = fechas
     else:
@@ -120,37 +46,36 @@ def payload_procesos(
     if precio_minimo > 0:
         where_query = f"{where_query} AND precio_base > {precio_minimo}"
 
+    if orden is not None:
+        where_query = f"{where_query} AND ordenentidad = '{orden}'"
+
     if entidades is not None:
         where_query = f"{where_query} AND entidad in{tuple(e for e in entidades)}"
-
-    if fases is not None:
-        where_query = f"{where_query} AND fase in{tuple(f for f in fases)}"
-
-    if modalidades is not None:
-        where_query = f"{where_query} AND modalidad_de_contratacion in{tuple(m for m in modalidades)}"
 
     payload = {
         "$where": where_query,
         "$order": "fecha_de_publicacion_del DESC",
-        "$limit": OFFSET,
+        "$limit": offset,
     }
-
-    if orden is not None:
-        payload.update({"ordenentidad": orden})
 
     return payload
 
 
-def payload_entidades(nits=None):
+def payload_entidades(offset=1000, selection=None, select_col=None, sort=None):
     # https://dev.socrata.com/foundry/www.datos.gov.co/h7zv-k39x
+    # https://dev.socrata.com/foundry/www.datos.gov.co/pajg-ux27
 
-    payload = {"$limit": OFFSET}
+    payload = {"$limit": offset}
+
+    if sort is not None:
+        payload.update({"$order": sort})
+
     where_query = ""
 
-    if nits is not None:
-        if isinstance(nits, list):
-            nits = set(nits)
-        where_query = f"ccb_nit_inst in{tuple(e for e in nits)}"
+    if (selection is not None) and (select_col is not None):
+        if isinstance(selection, list):
+            selection = set(selection)
+        where_query = f"{select_col} in{tuple(e for e in selection)}"
 
     if where_query:
         payload.update({"$where": where_query})
@@ -158,11 +83,36 @@ def payload_entidades(nits=None):
     return payload
 
 
+def limpiar_resultados():
+    st.session_state.seleccion = None
+
+
+# Definir variables y constantes
+
+TOKEN = st.secrets["X_APP_TOKEN"]
+
+COLS_NA = ["descripci_n_del_procedimiento"]
+COLS_DUP = ["id_del_proceso", "entidad"]
+
+COLS_ENTIDADES = ["nombre", "ccb_nit_inst", "orden", "sector", "naturaleza_juridica"]
+
+MODELO = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+
+OFFSET = 1000
+
+HOY = date.today()
+ayer = HOY - timedelta(days=7)
+
+session = create_session(TOKEN)
+
+if "procesos" not in st.session_state:
+    st.session_state.procesos = []
+
+if "seleccion" not in st.session_state:
+    st.session_state.seleccion = {}
+
 # Preparar ui
 
-st.set_page_config(
-    page_title="Procesos de contratación pública", page_icon="📈", layout="wide"
-)
 
 st.title(":flag-co: Búsqueda en procesos de contratación")
 
@@ -177,142 +127,149 @@ with st.sidebar:
     fechas = st.date_input("Rango de fechas", [ayer, HOY], max_value=HOY)
 
     precio_minimo = st.number_input(
-        "Monto mínimo", 0, value=50000000, step=5000000, format="%d"
+        "Monto mínimo", 0, value=50000000, step=10000000, format="%d"
     )
 
-    boton = st.button("Buscar procesos")
+    orden_entidad = st.selectbox("Tipo de entidad", ORDEN_ENTIDAD)
 
-query = st.text_input("Consulta a realizar")
-
-
-if "procesos" not in st.session_state:
-    st.session_state.procesos = []
+    boton = st.button("Buscar procesos", on_click=limpiar_resultados)
 
 
 # Aca se modifica todo
 
 embedder = load_embedder(MODELO)
 
-df_entidades = crear_df_entidades()
+with st.spinner("Cargando listado de sectores..."):
+    pay_ents = payload_entidades(offset=OFFSET, sort="nombre ASC")
+    ents = buscar_socrata(
+        _session=session, url=URL_ENTIDADES_FP, payload=pay_ents, offset=OFFSET
+    )
 
-session = create_session(TOKEN)
-
+    df_ents = crear_df_resultados(ents, na_cols=["nombre"])
+    df_ents = df_ents[COLS_ENTIDADES]
 
 if boton:
-    payload = payload_procesos(fechas, precio_minimo=precio_minimo)  # orden "Nacional"
+    payload = payload_procesos(
+        fechas,
+        precio_minimo=precio_minimo,
+        offset=OFFSET,
+        orden=orden_entidad,
+    )
 
-    procesos = buscar_socrata(_session=session, url=URL, payload=payload)
-    st.session_state.procesos = procesos
+    procesos = buscar_socrata(
+        _session=session, url=URL_PROCESOS, payload=payload, offset=OFFSET
+    )
+
+    st.session_state.procesos = [
+        {k: proceso.get(k) for k in proceso.keys() if k in COLS_PROCESOS}
+        for proceso in procesos
+    ]
 
     if st.session_state.procesos:
+        n = len(st.session_state.procesos)
         inicio, fin = fechas
         st.info(
-            f'Búsqueda realizada para procesos entre {inicio.strftime("%Y-%m-%d")} y {fin.strftime("%Y-%m-%d")}',
+            f'Búsqueda entre {inicio.strftime("%Y-%m-%d")} y {fin.strftime("%Y-%m-%d")}. Valor mínimo ${precio_minimo:,.0f}. Entidades de orden {orden_entidad}.',
             icon="ℹ️",
         )
+        st.info(f"{n} registros encontrados.", icon="🔥")
 
 
-if query:
-    query_embedding = encode_texts(embedder, query)
+if st.session_state.procesos:
+    df_procesos = crear_df_resultados(
+        st.session_state.procesos, na_cols=COLS_NA, dup_cols=COLS_DUP
+    )
 
-    if st.session_state.procesos:
-        df_procesos = crear_df_procesos(st.session_state.procesos)
-        corpus = df_procesos["descripci_n_del_procedimiento"].to_list()
+    df_procesos["urlproceso"] = df_procesos["urlproceso"].apply(lambda x: x.get("url"))
+
+    entidades = list(df_procesos["entidad"].sort_values().unique())
+    sel_entidades = st.multiselect("Entidades a considerar (opcional)", entidades)
+
+    if sel_entidades:
+        df_procesos = df_procesos[df_procesos["entidad"].isin(sel_entidades)]
+        df_procesos = df_procesos.reset_index(drop=True)
+
+    corpus = df_procesos["descripci_n_del_procedimiento"].to_list()
+
+    query = st.text_input("Consulta a realizar")
+
+    btn_filtro = st.button("Filtrar resultados")
+
+    if btn_filtro:
         corpus_embeddings = encode_texts(embedder, corpus)
 
-        hits = util.semantic_search(query_embedding, corpus_embeddings, top_k=10)
+        if query:
+            query_embedding = encode_texts(embedder, query)
 
-        query_hits = hits[0]
+            hits = util.semantic_search(query_embedding, corpus_embeddings, top_k=10)
 
-        ids = [hit["corpus_id"] for hit in query_hits]
+            query_hits = hits[0]
 
-        df_similarity = df_procesos.loc[ids]
-        df_similarity["score"] = [hit["score"] for hit in query_hits]
+            ids = [hit["corpus_id"] for hit in query_hits]
 
-        df_similarity = df_similarity.merge(
-            df_entidades, how="left", left_on="nit_entidad", right_on="CCB_NIT_INST"
-        )
+            df_similarity = df_procesos.loc[ids]
+            df_similarity["score"] = [hit["score"] for hit in query_hits]
 
-        COLS = [
-            "id_del_proceso",
-            "entidad",
-            "precio_base",
-            "fecha_de_publicacion_del",
-            "descripci_n_del_procedimiento",
-            "duracion",
-            "unidad_de_duracion",
-            "modalidad_de_contratacion",
-            "score",
-            "ORDEN",
-            "SECTOR",
-        ]
+            df_similarity = df_similarity.merge(
+                df_ents, how="left", left_on="nit_entidad", right_on="ccb_nit_inst"
+            )
 
-        df_similarity = df_similarity[COLS]
-        df_similarity = df_similarity.reset_index(drop=True)
+            COLS = COLS_PROCESOS + ["sector", "score"]
 
-        gb = GridOptionsBuilder.from_dataframe(df_similarity)
-        gb.configure_selection(selection_mode="multiple", use_checkbox=True)
-        gridOptions = gb.build()
+            df_similarity = df_similarity[COLS]
+            df_similarity = df_similarity.reset_index(drop=True)
 
-        grid = AgGrid(
-            df_similarity,
-            gridOptions,
-            columns_auto_size_mode=ColumnsAutoSizeMode.FIT_CONTENTS,
-            update_mode=GridUpdateMode.SELECTION_CHANGED,
-        )
+            st.session_state.seleccion = df_similarity.to_dict()
 
-        selected_rows = grid["selected_rows"]
+if st.session_state.seleccion:
+    df_similarity = pd.DataFrame.from_dict(st.session_state.seleccion)
+    gb = GridOptionsBuilder.from_dataframe(df_similarity)
+    gb.configure_selection(selection_mode="multiple", use_checkbox=True)
+    gridOptions = gb.build()
 
-        if len(selected_rows) >= 1:
-            if len(selected_rows) > 2:
-                cols = ["ORDEN", "SECTOR", "entidad", "precio_base"]
-                seleccion = pd.DataFrame(selected_rows)[cols]
+    grid = AgGrid(
+        df_similarity,
+        gridOptions,
+        columns_auto_size_mode=ColumnsAutoSizeMode.FIT_CONTENTS,
+        update_mode=GridUpdateMode.SELECTION_CHANGED,
+    )
 
-                seleccion["precio_base"] = pd.to_numeric(seleccion["precio_base"])
+    selected_rows = grid["selected_rows"]
 
-                seleccion = seleccion.applymap(lambda x: x if x else "No Identificado")
+    if len(selected_rows) >= 1:
+        for fila in selected_rows:
+            score = fila.get("score")
+            color_score = "green" if score > 0.6 else "red"
 
-                seleccion = seleccion.dropna(thresh=2)
+            adjudicado = fila.get("adjudicado")
+            color_adjud = "green" if adjudicado == "Si" else "red"
 
-                fig = px.treemap(
-                    seleccion,
-                    path=[px.Constant("Todos"), "ORDEN", "SECTOR", "entidad"],
-                    values="precio_base",
-                    color="SECTOR",
-                )
+            st.markdown(
+                f"""
+                    ## Descripción
+                    {fila.get('descripci_n_del_procedimiento')}
 
-                fig.update_traces(
-                    root_color="lightgrey",
-                    hovertemplate="<b>%{label}</b><br><b>Monto</b> %{value}",
-                    textinfo="label+value",
-                )
+                    Score: :{color_score}[{score:.2f}]
 
-                st.plotly_chart(fig, use_container_width=True)
+                    Entidad: :blue[{fila.get('entidad')}]
+
+                    Valor: :blue[{float(fila.get('precio_base')):,.2f}]
+
+                    Duración: {fila.get('duracion')} {fila.get('unidad_de_duracion')}
+
+                    Publicado: {fila.get('fecha_de_publicacion_del')}
+
+                    Sector: :blue[{fila.get('sector')}]
+                    
+                    Modalidad: {fila.get('modalidad_de_contratacion')}
+
+                    Adjudicado: :{color_adjud}[{adjudicado}]
+
+                    [URL del proceso]({fila.get('urlproceso')})
+                """
+            )
+
+            if adjudicado == "Si":
+                st.markdown(f"Proveedor: {fila.get('nombre_del_proveedor')}")
 
             st.divider()
-
-            for fila in selected_rows:
-                score = fila.get("score")
-                color_score = "green" if score > 0.6 else "red"
-
-                st.markdown(
-                    f"""
-                        ## Descripción
-                        {fila.get('descripci_n_del_procedimiento')}
-
-                        Entidad: :blue[{fila.get('entidad')}]
-
-                        Duración: {fila.get('duracion')} {fila.get('unidad_de_duracion')}
-
-                        Valor: :blue[{float(fila.get('precio_base')):,.2f}]
-
-                        Publicado: {fila.get('fecha_de_publicacion_del')}
-
-                        Sector: :blue[{fila.get('SECTOR')}]
-                        
-                        Modalidad: {fila.get('modalidad_de_contratacion')}
-
-                        Score
-                        :{color_score}[{fila.get('score'):.2f}]
-                    """
-                )
