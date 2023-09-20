@@ -5,82 +5,24 @@ from sentence_transformers import util
 import pandas as pd
 import streamlit as st
 
-from utils.caches import configurar_pagina
-
+from data.rutas import ENTIDADES
 from utils.caches import (
     load_embedder,
     encode_texts,
     create_session,
     buscar_socrata,
     crear_df_resultados,
+    cargar_df,
 )
-from utils.variables import URL_PROCESOS, URL_ENTIDADES_FP, COLS_PROCESOS, ORDEN_ENTIDAD
+from utils.config import configurar_pagina
+from utils.socrata import payload_procesos
+from utils.variables import URL_PROCESOS, COLS_PROCESOS, ORDEN_ENTIDAD
 
 
 configurar_pagina(title="Procesos de contratación pública", icon="📈", layout="wide")
 
 
 # Definir funciones
-
-
-def payload_procesos(
-    fechas,
-    precio_minimo=0,
-    offset=1000,
-    orden=None,
-    entidades=None,
-):
-    # https://dev.socrata.com/foundry/www.datos.gov.co/p6dx-8zbt
-
-    if isinstance(fechas, tuple):
-        inicio, fin = fechas
-    else:
-        inicio = fechas
-        fin = HOY
-
-    inicial = f'{inicio.strftime("%Y-%m-%d")}T00:00:00'
-    final = f'{fin.strftime("%Y-%m-%d")}T23:59:59'
-
-    where_query = f"fecha_de_publicacion_del between '{inicial}' and '{final}'"
-
-    if precio_minimo > 0:
-        where_query = f"{where_query} AND precio_base > {precio_minimo}"
-
-    if orden is not None:
-        where_query = f"{where_query} AND ordenentidad = '{orden}'"
-
-    if entidades is not None:
-        where_query = f"{where_query} AND entidad in{tuple(e for e in entidades)}"
-
-    payload = {
-        "$where": where_query,
-        "$order": "fecha_de_publicacion_del DESC",
-        "$limit": offset,
-    }
-
-    return payload
-
-
-def payload_entidades(offset=1000, selection=None, select_col=None, sort=None):
-    # https://dev.socrata.com/foundry/www.datos.gov.co/h7zv-k39x
-    # https://dev.socrata.com/foundry/www.datos.gov.co/pajg-ux27
-
-    payload = {"$limit": offset}
-
-    if sort is not None:
-        payload.update({"$order": sort})
-
-    where_query = ""
-
-    if (selection is not None) and (select_col is not None):
-        if isinstance(selection, list):
-            selection = set(selection)
-        where_query = f"{select_col} in{tuple(e for e in selection)}"
-
-    if where_query:
-        payload.update({"$where": where_query})
-
-    return payload
 
 
 def limpiar_resultados():
@@ -94,14 +36,14 @@ TOKEN = st.secrets["X_APP_TOKEN"]
 COLS_NA = ["descripci_n_del_procedimiento"]
 COLS_DUP = ["id_del_proceso", "entidad"]
 
-COLS_ENTIDADES = ["nombre", "ccb_nit_inst", "orden", "sector", "naturaleza_juridica"]
+COLS_ENTIDADES = ["NOMBRE", "CCB_NIT_INST", "ORDEN", "SECTOR"]
 
 MODELO = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
 
 OFFSET = 1000
 
 HOY = date.today()
-ayer = HOY - timedelta(days=7)
+ayer = HOY - timedelta(days=14)
 
 session = create_session(TOKEN)
 
@@ -117,7 +59,7 @@ if "seleccion" not in st.session_state:
 st.title(":flag-co: Búsqueda en procesos de contratación")
 
 st.markdown(
-    """Aplicación para encontrar similitud semántica en descripción de procesos de contratación."""
+    """Aplicación para búsqueda semántica en descripción de procesos de contratación."""
 )
 
 st.markdown("---")
@@ -140,13 +82,7 @@ with st.sidebar:
 embedder = load_embedder(MODELO)
 
 with st.spinner("Cargando listado de sectores..."):
-    pay_ents = payload_entidades(offset=OFFSET, sort="nombre ASC")
-    ents = buscar_socrata(
-        _session=session, url=URL_ENTIDADES_FP, payload=pay_ents, offset=OFFSET
-    )
-
-    df_ents = crear_df_resultados(ents, na_cols=["nombre"])
-    df_ents = df_ents[COLS_ENTIDADES]
+    df_ents = cargar_df(ENTIDADES, {"CCB_NIT_INST": str}, COLS_ENTIDADES)
 
 if boton:
     payload = payload_procesos(
@@ -211,10 +147,10 @@ if st.session_state.procesos:
             df_similarity["score"] = [hit["score"] for hit in query_hits]
 
             df_similarity = df_similarity.merge(
-                df_ents, how="left", left_on="nit_entidad", right_on="ccb_nit_inst"
+                df_ents, how="left", left_on="nit_entidad", right_on="CCB_NIT_INST"
             )
 
-            COLS = COLS_PROCESOS + ["sector", "score"]
+            COLS = COLS_PROCESOS + ["SECTOR", "score"]
 
             df_similarity = df_similarity[COLS]
             df_similarity = df_similarity.reset_index(drop=True)
@@ -259,7 +195,7 @@ if st.session_state.seleccion:
 
                     Publicado: {fila.get('fecha_de_publicacion_del')}
 
-                    Sector: :blue[{fila.get('sector')}]
+                    Sector: :blue[{fila.get('SECTOR')}]
                     
                     Modalidad: {fila.get('modalidad_de_contratacion')}
 

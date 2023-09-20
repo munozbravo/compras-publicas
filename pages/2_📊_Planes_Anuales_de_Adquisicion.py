@@ -1,15 +1,19 @@
-from pathlib import Path
-
 from st_aggrid import GridOptionsBuilder, AgGrid, GridUpdateMode, ColumnsAutoSizeMode
-from sentence_transformers import SentenceTransformer, util
+from sentence_transformers import util
 import pandas as pd
 import plotly.express as px
 import streamlit as st
 
+from data.rutas import ENTIDADES, META_PAA, DIR_PAA
+from utils.caches import cargar_df, load_embedder, encode_texts
+from utils.config import configurar_pagina
+from utils.variables import COLS_ENTIDADES, COLS_PAA
+
+
+configurar_pagina("Planes anuales de adquisición", "📊", "wide")
+
 
 # Definir variables y constantes
-
-COLS_ENTIDADES = ["NOMBRE", "CCB_NIT_INST", "ORDEN", "SECTOR"]
 
 MODELO = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
 
@@ -36,67 +40,9 @@ RENOMBRES = {
 }
 
 
-COLS_PLANES = [
-    "unspsc",
-    "descripcion",
-    "mes_inicio",
-    "mes_oferta",
-    "duracion",
-    "intervalo",
-    "modalidad",
-    "fuente",
-    "valor",
-    "unidad",
-    "ubicacion",
-]
-
-dir_data = Path("data")
-
-
-# Definir funciones
-
-
-@st.cache_resource(show_spinner="Cargando modelo para similitud semántica...")
-def load_embedder(model_id):
-    return SentenceTransformer(model_id)
-
-
-@st.cache_data(show_spinner="Calculando vectores...")
-def encode_texts(_embedder, texts):
-    embeddings = _embedder.encode(texts, convert_to_tensor=True)
-
-    return embeddings
-
-
-@st.cache_data(show_spinner="Cargando entidades del Estado...")
-def crear_df_entidades():
-    df_entidades = pd.read_csv(
-        dir_data.joinpath("entidades.csv"),
-        encoding="utf-8",
-        dtype={"CCB_NIT_INST": str},
-        usecols=COLS_ENTIDADES,
-    )
-
-    return df_entidades
-
-
-@st.cache_data(show_spinner="Cargando metadata Planes Anuales de Adquisición...")
-def crear_df_metadata():
-    df_meta = pd.read_excel(dir_data.joinpath("paa.xlsx"), dtype={"nit_entidad": str})
-
-    df_meta = df_meta.sort_values(by="entidad")
-
-    return df_meta
-
-
 # Datos globales y config
 
-
-st.set_page_config(
-    page_title="Planes anuales de adquisición", page_icon="📊", layout="wide"
-)
-
-df_meta = crear_df_metadata()
+df_meta = cargar_df(META_PAA, {"nit_entidad": str}, ordenar="entidad")
 
 
 # Preparar ui
@@ -104,7 +50,7 @@ df_meta = crear_df_metadata()
 st.title(":flag-co: Búsqueda en Planes Anuales de Adquisición")
 
 st.markdown(
-    """Aplicación para encontrar similitud semántica en descripción de Planes Anuales de Adquisición."""
+    """Aplicación para búsqueda semántica en la descripción de Planes Anuales de Adquisición."""
 )
 
 st.markdown("---")
@@ -118,7 +64,9 @@ query = st.text_input("Consulta a realizar")
 
 embedder = load_embedder(MODELO)
 
-df_entidades = crear_df_entidades()
+df_entidades = cargar_df(
+    ENTIDADES, tipos={"CCB_NIT_INST": str}, columnas=COLS_ENTIDADES
+)
 
 if opt_entidades and query:
     df_filtrado = df_meta[df_meta["entidad"].isin(opt_entidades)]
@@ -126,12 +74,9 @@ if opt_entidades and query:
     dfs = []
 
     for row in df_filtrado.itertuples():
-        df = pd.read_excel(
-            dir_data.joinpath("paa", row.archivo),
-            skiprows=1,
-        )
+        df = pd.read_excel(DIR_PAA.joinpath(row.archivo), skiprows=1)
         df.rename(RENOMBRES, inplace=True, axis=1)
-        df = df[COLS_PLANES]
+        df = df[COLS_PAA]
         df["entidad"] = row.entidad
         df["nit_entidad"] = row.nit_entidad
         dfs.append(df)
@@ -182,7 +127,7 @@ if opt_entidades and query:
 
                 seleccion["valor"] = pd.to_numeric(seleccion["valor"])
 
-                seleccion = seleccion.applymap(lambda x: x if x else "No Identificado")
+                seleccion = seleccion.map(lambda x: x if x else "No Identificado")
 
                 seleccion = seleccion.dropna(thresh=2)
 
