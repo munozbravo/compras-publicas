@@ -10,7 +10,7 @@ from utils.config import configurar_pagina
 from utils.variables import COLS_ENTIDADES, COLS_PAA
 
 
-configurar_pagina("Planes anuales de adquisición", "📊", "wide")
+configurar_pagina("Planes anuales de adquisición", "💸", "wide")
 
 
 # Definir variables y constantes
@@ -50,7 +50,7 @@ df_meta = cargar_df(META_PAA, {"nit_entidad": str}, ordenar="entidad")
 st.title(":flag-co: Búsqueda en Planes Anuales de Adquisición")
 
 st.markdown(
-    """Aplicación para búsqueda semántica en la descripción de Planes Anuales de Adquisición."""
+    """Búsqueda semántica en la descripción de Planes Anuales de Adquisición."""
 )
 
 st.markdown("---")
