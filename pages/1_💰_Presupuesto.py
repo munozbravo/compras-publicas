@@ -8,7 +8,7 @@ from utils.config import configurar_pagina
 from utils.variables import TIPO_PRESUPUESTO, COLS_PGN
 
 
-configurar_pagina("Presupuesto de entidades estatales", "🌍", "wide")
+configurar_pagina("Presupuesto de entidades estatales", "💰", "wide")
 
 
 # Preparar ui
