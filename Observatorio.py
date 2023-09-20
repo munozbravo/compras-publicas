@@ -21,10 +21,9 @@ st.set_page_config(page_title="Observatorio de Mercado", page_icon="👋", layou
 
 st.title(":flag-co: Observatorio de mercado")
 
-st.sidebar.success("Seleccione alguna de las pestañas disponibles.")
 
 st.markdown(
-    """**👈 Seleccione alguna pestaña** para diferentes análisis.
+    """**👈 Seleccione alguna pestaña** para diferentes opciones.
     """
 )
 
