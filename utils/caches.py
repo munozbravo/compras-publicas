@@ -83,3 +83,15 @@ def cargar_df(fp, tipos=None, columnas=None, ordenar=None, ascending=True):
         df = df.sort_values(by=ordenar, ascending=ascending)
 
     return df
+
+
+def limpiar_estado(key: str):
+    """Elimina contenido de session state
+
+    Parameters
+    ----------
+    key : str
+        Variable a limpiar de session state
+    """
+    if key in st.session_state:
+        st.session_state[key] = None
