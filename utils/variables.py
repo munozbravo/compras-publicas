@@ -12,6 +12,8 @@ ID_PROPONENTES = "hgi6-6wh3"  # Proponentes por Proceso SECOP II
 ID_SECOP1_PROCESOS = "f789-7hwg"  # SECOP I - Procesos de Compra Pública
 ID_INTEGRADO = "rpmr-utcd"  # SECOP Integrado
 ID_ENTIDADES_SECOP = "pajg-ux27"  # Entidades con Publicación en SECOP II
+ID_CONTRATOS = "jbjy-vk9h"  # contratos registrados en SECOP II desde su lanzamiento
+
 
 # IDs Función Pública
 
@@ -24,6 +26,7 @@ URL_PROCESOS = f"{URL_RESOURCES}{ID_PROCESOS}.json"
 URL_PAA = f"{URL_RESOURCES}{ID_ENCABEZADO_PAA}.json"
 URL_ENTIDADES_FP = f"{URL_RESOURCES}{ID_ENTIDADES_FP}.json"
 URL_ENTIDADES_SECOP = f"{URL_RESOURCES}{ID_ENTIDADES_SECOP}.json"
+URL_PROPONENTES = f"{URL_RESOURCES}{ID_PROPONENTES}.json"
 
 # Columnas de tablas
 
@@ -74,4 +77,13 @@ COLS_PAA = [
     "unidad",
     "ubicacion",
     "unspsc",
+]
+
+COLS_PROVEEDORES = [
+    "proveedor",
+    "nit_proveedor",
+    "id_procedimiento",
+    "fecha_publicaci_n",
+    "nombre_procedimiento",
+    "entidad_compradora",
 ]
