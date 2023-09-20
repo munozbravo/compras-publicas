@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from sentence_transformers import SentenceTransformer
 import pandas as pd
 import requests
@@ -68,17 +70,16 @@ def crear_df_resultados(resultados, na_cols=None, dup_cols=None):
     return df
 
 
-def configurar_pagina(title: str, icon: str, layout: str = "wide"):
-    """Iniciar configuracion de página.
+@st.cache_data(show_spinner="Cargando archivo requerido...")
+def cargar_df(fp, tipos=None, columnas=None, ordenar=None, ascending=True):
+    ruta = Path(fp)
 
-    Parameters
-    ----------
-    title : str
-        Nombre de la página
-    icon : str
-        Icono de la página
-    layout : str
-        Layout inicial de la página
-    """
+    if ruta.suffix == ".csv":
+        df = pd.read_csv(ruta, encoding="utf-8", dtype=tipos, usecols=columnas)
+    elif ruta.suffix == ".xlsx":
+        df = pd.read_excel(ruta, dtype=tipos, usecols=columnas)
 
-    return st.set_page_config(page_title=title, page_icon=icon, layout=layout)
+    if ordenar is not None:
+        df = df.sort_values(by=ordenar, ascending=ascending)
+
+    return df

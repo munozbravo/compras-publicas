@@ -1,6 +1,7 @@
-# ordenentidad
+# manuales
 ORDEN_ENTIDAD = ["Nacional", "Territorial", "Corporación Autónoma"]
 
+TIPO_PRESUPUESTO = ["Funcionamiento", "Inversión", "Total de Entidad"]
 
 # IDs Colombia Compra Eficiente
 
@@ -28,8 +29,8 @@ URL_ENTIDADES_SECOP = f"{URL_RESOURCES}{ID_ENTIDADES_SECOP}.json"
 
 COLS_PROCESOS = [
     "id_del_proceso",
-    "entidad",
     "descripci_n_del_procedimiento",
+    "entidad",
     "precio_base",
     "fecha_de_publicacion_del",
     "fase",
@@ -45,4 +46,32 @@ COLS_PROCESOS = [
     "fecha_adjudicacion",
     "nombre_del_proveedor",
     "urlproceso",
+]
+
+
+COLS_ENTIDADES = ["NOMBRE", "CCB_NIT_INST", "ORDEN", "SECTOR"]
+
+COLS_PGN = [
+    "tipo",
+    "nivel",
+    "CONCEPTO",
+    "ENTIDAD",
+    "APORTE_NACIONAL",
+    "RECURSOS_PROPIOS",
+    "TOTAL",
+]
+
+
+COLS_PAA = [
+    "descripcion",
+    "mes_inicio",
+    "mes_oferta",
+    "duracion",
+    "intervalo",
+    "modalidad",
+    "fuente",
+    "valor",
+    "unidad",
+    "ubicacion",
+    "unspsc",
 ]
