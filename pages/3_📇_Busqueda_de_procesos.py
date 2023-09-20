@@ -13,20 +13,14 @@ from utils.caches import (
     buscar_socrata,
     crear_df_resultados,
     cargar_df,
+    limpiar_estado,
 )
 from utils.config import configurar_pagina
 from utils.socrata import payload_procesos
 from utils.variables import URL_PROCESOS, COLS_PROCESOS, ORDEN_ENTIDAD
 
 
-configurar_pagina(title="Procesos de contratación pública", icon="📈", layout="wide")
-
-
-# Definir funciones
-
-
-def limpiar_resultados():
-    st.session_state.seleccion = None
+configurar_pagina(title="Procesos de contratación pública", icon="📇", layout="wide")
 
 
 # Definir variables y constantes
@@ -47,20 +41,21 @@ ayer = HOY - timedelta(days=14)
 
 session = create_session(TOKEN)
 
-if "procesos" not in st.session_state:
-    st.session_state.procesos = []
+k1 = "procesos"
+k2 = "seleccion"
 
-if "seleccion" not in st.session_state:
-    st.session_state.seleccion = {}
+if k1 not in st.session_state:
+    st.session_state[k1] = []
+
+if k2 not in st.session_state:
+    st.session_state[k2] = {}
 
 # Preparar ui
 
 
 st.title(":flag-co: Búsqueda en procesos de contratación")
 
-st.markdown(
-    """Aplicación para búsqueda semántica en descripción de procesos de contratación."""
-)
+st.markdown("""Búsqueda semántica en la descripción de procesos de contratación.""")
 
 st.markdown("---")
 
@@ -74,7 +69,7 @@ with st.sidebar:
 
     orden_entidad = st.selectbox("Tipo de entidad", ORDEN_ENTIDAD)
 
-    boton = st.button("Buscar procesos", on_click=limpiar_resultados)
+    boton = st.button("Buscar procesos", on_click=limpiar_estado, args=(k2,))
 
 
 # Aca se modifica todo
@@ -96,24 +91,23 @@ if boton:
         _session=session, url=URL_PROCESOS, payload=payload, offset=OFFSET
     )
 
-    st.session_state.procesos = [
+    st.session_state[k1] = [
         {k: proceso.get(k) for k in proceso.keys() if k in COLS_PROCESOS}
         for proceso in procesos
     ]
 
-    if st.session_state.procesos:
-        n = len(st.session_state.procesos)
-        inicio, fin = fechas
-        st.info(
-            f'Búsqueda entre {inicio.strftime("%Y-%m-%d")} y {fin.strftime("%Y-%m-%d")}. Valor mínimo ${precio_minimo:,.0f}. Entidades de orden {orden_entidad}.',
-            icon="ℹ️",
-        )
-        st.info(f"{n} registros encontrados.", icon="🔥")
+    n = len(st.session_state[k1])
+    inicio, fin = fechas
+    st.info(
+        f'Búsqueda entre {inicio.strftime("%Y-%m-%d")} y {fin.strftime("%Y-%m-%d")}. Valor mínimo ${precio_minimo:,.0f}. Entidades de orden {orden_entidad}.',
+        icon="ℹ️",
+    )
+    st.info(f"{n} registros encontrados.", icon="🔥")
 
 
-if st.session_state.procesos:
+if st.session_state[k1]:
     df_procesos = crear_df_resultados(
-        st.session_state.procesos, na_cols=COLS_NA, dup_cols=COLS_DUP
+        st.session_state[k1], na_cols=COLS_NA, dup_cols=COLS_DUP
     )
 
     df_procesos["urlproceso"] = df_procesos["urlproceso"].apply(lambda x: x.get("url"))
@@ -155,10 +149,10 @@ if st.session_state.procesos:
             df_similarity = df_similarity[COLS]
             df_similarity = df_similarity.reset_index(drop=True)
 
-            st.session_state.seleccion = df_similarity.to_dict()
+            st.session_state[k2] = df_similarity.to_dict()
 
-if st.session_state.seleccion:
-    df_similarity = pd.DataFrame.from_dict(st.session_state.seleccion)
+if st.session_state[k2]:
+    df_similarity = pd.DataFrame.from_dict(st.session_state[k2])
     gb = GridOptionsBuilder.from_dataframe(df_similarity)
     gb.configure_selection(selection_mode="multiple", use_checkbox=True)
     gridOptions = gb.build()
