@@ -16,6 +16,7 @@ from utils.caches import (
     limpiar_estado,
 )
 from utils.config import configurar_pagina
+from utils.helpers import validar_fechas
 from utils.socrata import payload_procesos
 from utils.variables import URL_PROCESOS, COLS_PROCESOS, ORDEN_ENTIDAD
 
@@ -80,11 +81,14 @@ with st.spinner("Cargando listado de sectores..."):
     df_ents = cargar_df(ENTIDADES, {"CCB_NIT_INST": str}, COLS_ENTIDADES)
 
 if boton:
+    inicio, fin = validar_fechas(fechas)
+
     payload = payload_procesos(
-        fechas,
+        fechas=(inicio, fin),
         precio_minimo=precio_minimo,
         offset=OFFSET,
         orden=orden_entidad,
+        sort="fecha_de_publicacion_del DESC",
     )
 
     procesos = buscar_socrata(
@@ -97,7 +101,7 @@ if boton:
     ]
 
     n = len(st.session_state[k1])
-    inicio, fin = fechas
+
     st.info(
         f'Búsqueda entre {inicio.strftime("%Y-%m-%d")} y {fin.strftime("%Y-%m-%d")}. Valor mínimo ${precio_minimo:,.0f}. Entidades de orden {orden_entidad}.',
         icon="ℹ️",
@@ -160,6 +164,7 @@ if st.session_state[k2]:
     grid = AgGrid(
         df_similarity,
         gridOptions,
+        height=250,
         columns_auto_size_mode=ColumnsAutoSizeMode.FIT_CONTENTS,
         update_mode=GridUpdateMode.SELECTION_CHANGED,
     )
