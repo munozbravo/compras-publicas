@@ -6,8 +6,14 @@ import streamlit as st
 
 from utils.caches import create_session, buscar_socrata, crear_df_resultados
 from utils.config import configurar_pagina
-from utils.socrata import payload_proponentes
-from utils.variables import URL_PROPONENTES, COLS_PROVEEDORES
+from utils.helpers import validar_fechas
+from utils.socrata import payload_proponentes, payload_procesos
+from utils.variables import (
+    COLS_PROVEEDORES,
+    COLS_PROCESOS,
+    URL_PROPONENTES,
+    URL_PROCESOS,
+)
 
 
 configurar_pagina(
@@ -34,7 +40,6 @@ k1 = "proveedores"
 if k1 not in st.session_state:
     st.session_state[k1] = []
 
-
 # Preparar ui
 
 
@@ -54,10 +59,14 @@ with st.sidebar:
 
 
 if boton:
+    inicio, fin = validar_fechas(fechas)
+
     if proveedor:
-        payload = payload_proponentes(fechas=fechas, offset=OFFSET, proveedor=proveedor)
+        payload = payload_proponentes(
+            fechas=(inicio, fin), offset=OFFSET, proveedor=proveedor
+        )
     else:
-        payload = payload_proponentes(fechas=fechas, offset=OFFSET)
+        payload = payload_proponentes(fechas=(inicio, fin), offset=OFFSET)
 
     resultados = buscar_socrata(
         _session=session, url=URL_PROPONENTES, payload=payload, offset=OFFSET
@@ -70,7 +79,6 @@ if boton:
 
     n = len(st.session_state[k1])
 
-    inicio, fin = fechas
     st.info(
         f'Búsqueda entre {inicio.strftime("%Y-%m-%d")} y {fin.strftime("%Y-%m-%d")}.',
         icon="ℹ️",
@@ -88,13 +96,54 @@ if st.session_state[k1]:
     gb = GridOptionsBuilder.from_dataframe(df_proveedores)
     gb.configure_column(field="nit_proveedor", hide=True, supress_tool_panel=True)
 
-    gb.configure_selection(selection_mode="single", use_checkbox=False)
+    gb.configure_selection(selection_mode="single", use_checkbox=True)
     gridOptions = gb.build()
 
     grid = AgGrid(
         df_proveedores,
         gridOptions,
-        height=350,
+        height=250,
         columns_auto_size_mode=ColumnsAutoSizeMode.FIT_CONTENTS,
         update_mode=GridUpdateMode.SELECTION_CHANGED,
     )
+
+    selected_rows = grid["selected_rows"]
+
+    for fila in selected_rows:
+        id_proceso = fila.get("id_procedimiento")
+
+        pay = payload_procesos(id_proceso=id_proceso)
+        res = buscar_socrata(_session=session, url=URL_PROCESOS, payload=pay)
+        res = [
+            {k: proceso.get(k) for k in proceso.keys() if k in COLS_PROCESOS}
+            for proceso in res
+        ]
+        if res:
+            resultado = res[0]
+
+            adjudicado = resultado.get("adjudicado")
+            color_adjud = "green" if adjudicado == "Si" else "red"
+
+            st.markdown(
+                f"""
+                    ## Descripción
+                    {resultado.get('descripci_n_del_procedimiento')}
+
+                    Entidad: :blue[{resultado.get('entidad')}]
+
+                    Valor: :blue[{float(resultado.get('precio_base')):,.2f}]
+
+                    Duración: {resultado.get('duracion')} {resultado.get('unidad_de_duracion')}
+
+                    Publicado: {resultado.get('fecha_de_publicacion_del')}
+                    
+                    Modalidad: {resultado.get('modalidad_de_contratacion')}
+
+                    Adjudicado: :{color_adjud}[{adjudicado}]
+
+                    [URL del proceso]({resultado.get('urlproceso').get('url')})
+                """
+            )
+
+            if adjudicado == "Si":
+                st.markdown(f"Proveedor: {resultado.get('nombre_del_proveedor')}")
