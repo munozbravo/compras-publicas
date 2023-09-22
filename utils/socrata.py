@@ -1,4 +1,84 @@
-from datetime import date, timedelta
+from datetime import date
+
+from utils.helpers import validar_fechas
+
+
+def payload_procesos(
+    fechas: tuple[date] | date = None,
+    precio_minimo: int = 0,
+    offset: int = 1000,
+    orden: str = None,
+    entidades: list | set = None,
+    id_proceso: str = None,
+    sort: str = None,
+) -> dict:
+    """Payload para SECOP II - Procesos de Contratación
+
+    Parameters
+    ----------
+    fechas : tuple[date] | date, optional
+        Fechas inicial y final de búsqueda, default None
+    precio_minimo : int, optional
+        Precio mínimo de proceso de contratación, default 0
+    offset : int, optional
+        Cantidad de resultados por llamado, default 1000
+    orden : str, optional
+        Entidad de orden Nacional o Territorial, default None
+    entidades : list | set, optional
+        Filtro de entidades a buscar, default None
+    id_proceso : str, optional
+        ID de proceso a buscar, default None
+    sort : str, optional
+        Campo a usar para ordenar, default None
+
+    Returns
+    -------
+    dict
+        Payload para enviar a Socrata API
+    """
+    # https://dev.socrata.com/foundry/www.datos.gov.co/p6dx-8zbt
+
+    payload = {"$limit": offset}
+
+    if sort is not None:
+        payload.update({"$order": sort})
+
+    where_query = ""
+
+    if fechas is not None:
+        inicio, fin = validar_fechas(fechas)
+
+        inicial = f'{inicio.strftime("%Y-%m-%d")}T00:00:00'
+        final = f'{fin.strftime("%Y-%m-%d")}T23:59:59'
+
+        q = f"fecha_de_publicacion_del between '{inicial}' and '{final}'"
+
+        where_query = f"{where_query} AND {q}" if where_query else q
+
+    if precio_minimo > 0:
+        q = f"precio_base > {precio_minimo}"
+
+        where_query = f"{where_query} AND {q}" if where_query else q
+
+    if orden is not None:
+        q = f"ordenentidad = '{orden}'"
+
+        where_query = f"{where_query} AND {q}" if where_query else q
+
+    if entidades is not None:
+        q = f"entidad in{tuple(e for e in entidades)}"
+
+        where_query = f"{where_query} AND {q}" if where_query else q
+
+    if id_proceso is not None:
+        q = f"id_del_proceso = '{id_proceso}'"
+
+        where_query = f"{where_query} AND {q}" if where_query else q
+
+    if where_query:
+        payload.update({"$where": where_query})
+
+    return payload
 
 
 def payload_paa(anno: int = None, limit: int = 1000) -> dict:
@@ -7,10 +87,10 @@ def payload_paa(anno: int = None, limit: int = 1000) -> dict:
     Parameters
     ----------
     anno : int, optional
-        Año deseado para búsqueda, by default None
+        Año deseado para búsqueda, default None
 
     limit : int, optional
-        Cantidad de registros por llamado
+        Cantidad de registros por llamado, default 1000
 
     Returns
     -------
@@ -27,44 +107,6 @@ def payload_paa(anno: int = None, limit: int = 1000) -> dict:
 
     if where_query:
         payload.update({"$where": where_query})
-
-    return payload
-
-
-def payload_procesos(
-    fechas,
-    precio_minimo=0,
-    offset=1000,
-    orden=None,
-    entidades=None,
-):
-    # https://dev.socrata.com/foundry/www.datos.gov.co/p6dx-8zbt
-
-    if isinstance(fechas, tuple):
-        inicio, fin = fechas
-    else:
-        inicio = fechas
-        fin = date.today()
-
-    inicial = f'{inicio.strftime("%Y-%m-%d")}T00:00:00'
-    final = f'{fin.strftime("%Y-%m-%d")}T23:59:59'
-
-    where_query = f"fecha_de_publicacion_del between '{inicial}' and '{final}'"
-
-    if precio_minimo > 0:
-        where_query = f"{where_query} AND precio_base > {precio_minimo}"
-
-    if orden is not None:
-        where_query = f"{where_query} AND ordenentidad = '{orden}'"
-
-    if entidades is not None:
-        where_query = f"{where_query} AND entidad in{tuple(e for e in entidades)}"
-
-    payload = {
-        "$where": where_query,
-        "$order": "fecha_de_publicacion_del DESC",
-        "$limit": offset,
-    }
 
     return payload
 
@@ -119,11 +161,7 @@ def payload_proponentes(
 
     payload = {"$limit": offset, "$order": "fecha_publicaci_n DESC"}
 
-    if isinstance(fechas, tuple):
-        inicio, fin = fechas
-    else:
-        inicio = fechas
-        fin = date.today()
+    inicio, fin = validar_fechas(fechas)
 
     inicial = f'{inicio.strftime("%Y-%m-%d")}T00:00:00'
     final = f'{fin.strftime("%Y-%m-%d")}T23:59:59'
