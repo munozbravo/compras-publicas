@@ -31,26 +31,37 @@ def create_session(token):
 
 @st.cache_data(show_spinner="Buscando en Socrata API...")
 def buscar_socrata(_session, url, payload, offset=1000):
+    error = 0
+    resultados = []
+
     n = offset + 0
 
-    r = _session.get(url, params=payload)
+    try:
+        r = _session.get(url, params=payload)
+    except Exception as e:
+        error += 1
+        r = None
 
-    if r.status_code in [200, 202]:
-        resultados = r.json()
+    if (r is not None) and (200 <= r.status_code < 300):
+        # r.status_code in [200, 202] podria ser
+        resultados.extend(r.json())
         params = payload.copy()
 
         while len(resultados) == n:
             params.update({"$offset": n})
 
-            r = _session.get(url, params=params)
-            if r.status_code in [200, 202]:
+            try:
+                r = _session.get(url, params=params)
+            except Exception as e:
+                error += 1
+                r = None
+
+            if (r is not None) and (200 <= r.status_code < 300):
                 resultados.extend(r.json())
                 n += offset
 
             else:
                 break
-    else:
-        resultados = []
 
     return resultados
 
